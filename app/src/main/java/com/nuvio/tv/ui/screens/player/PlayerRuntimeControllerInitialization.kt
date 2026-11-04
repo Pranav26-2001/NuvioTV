@@ -1699,18 +1699,28 @@ internal fun PlayerRuntimeController.initializePlayer(
                              error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ||
                              error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
                              error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED)
-                        _uiState.update {
-                            it.copy(
-                                error = detailedError,
-                                showSwitchToMpvErrorAction = canSwitchToMpvOnFatal,
-                                showLoadingOverlay = false,
-                                showPauseOverlay = false,
-                                loadingIssueReportVisible = false,
-                                loadingIssueElapsedMs = 0L,
-                                playbackEnded = false,
-                                postPlayMode = null
-                            )
+                        val publishFatalError = {
+                            _uiState.update {
+                                it.copy(
+                                    error = detailedError,
+                                    showSwitchToMpvErrorAction = canSwitchToMpvOnFatal,
+                                    showLoadingOverlay = false,
+                                    showPauseOverlay = false,
+                                    loadingIssueReportVisible = false,
+                                    loadingIssueElapsedMs = 0L,
+                                    playbackEnded = false,
+                                    postPlayMode = null
+                                )
+                            }
                         }
+                        // Autoplay picked a dead stream: move on to the next candidate. Decoder
+                        // problems are device-specific, so those keep the "switch to mpv" prompt.
+                        if (!canSwitchToMpvOnFatal &&
+                            tryAutoSwitchToNextStream(onNoCandidate = { publishFatalError() })
+                        ) {
+                            return
+                        }
+                        publishFatalError()
                     }
                 })
 

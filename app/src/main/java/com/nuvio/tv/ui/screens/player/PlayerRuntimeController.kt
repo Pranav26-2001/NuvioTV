@@ -422,6 +422,19 @@ class PlayerRuntimeController(
     internal var vodTelemetryJob: Job? = null
     internal var firstFrameWatchdogJob: Job? = null
     internal var stallWatchdogJob: Job? = null
+
+    /**
+     * True while this playback is still the autoplay chain. Set when the player was reached by
+     * autoplay and cleared as soon as the user picks a stream or episode by hand, so only
+     * autoplay's own choice is replaced automatically when it turns out to be dead.
+     */
+    internal var autoFailoverActive: Boolean =
+        savedStateHandle.get<String>("autoPlayNav")?.equals("true", ignoreCase = true) == true
+    /** Keys of streams that failed (or are being tried) in this chain, see StreamAutoPlaySelector.failureKeys. */
+    internal val failedAutoPlayStreamKeys = mutableSetOf<String>()
+    internal var autoPlayFailoverCount: Int = 0
+    internal var autoFailoverJob: Job? = null
+
     internal var seekSourceLogJob: Job? = null
     internal var hideControlsJob: Job? = null
     internal var hideSeekOverlayJob: Job? = null

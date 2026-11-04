@@ -880,8 +880,12 @@ private fun PlayerRuntimeController.openExternalStreamInBrowser(
 
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun PlayerRuntimeController.switchToSourceStream(
-    stream: Stream
+    stream: Stream,
+    fromAutoFailover: Boolean = false
 ) {
+    // A stream the user picks by hand ends the autoplay chain, so a later error on it is shown
+    // instead of silently jumping to another stream.
+    if (!fromAutoFailover) autoFailoverActive = false
     sourceStreamsScope?.cancel()
     sourceStreamsScope = null
     sourceStreamsJob = null
@@ -897,9 +901,19 @@ internal fun PlayerRuntimeController.switchToSourceStream(
             val prepared = prepareServerStream(stream)
             debridResolveJob = null
             if (prepared != null) {
-                switchToSourceStream(prepared)
+                switchToSourceStream(prepared, fromAutoFailover = fromAutoFailover)
             } else {
-                _uiState.update { it.copy(isLoadingSourceStreams = false) }
+                _uiState.update {
+                    it.copy(
+                        isLoadingSourceStreams = false,
+                        // Lets the automatic failover see that this candidate could not be prepared.
+                        sourceStreamsError = if (fromAutoFailover) {
+                            context.getString(com.nuvio.tv.R.string.player_stream_error_invalid_url)
+                        } else {
+                            it.sourceStreamsError
+                        }
+                    )
+                }
             }
         }
         return
@@ -912,7 +926,7 @@ internal fun PlayerRuntimeController.switchToSourceStream(
             val resolved = resolveYouTubeStream(stream)
             debridResolveJob = null
             if (resolved != null) {
-                switchToSourceStream(resolved)
+                switchToSourceStream(resolved, fromAutoFailover = fromAutoFailover)
             } else {
                 _uiState.update {
                     it.copy(
@@ -932,7 +946,7 @@ internal fun PlayerRuntimeController.switchToSourceStream(
             val resolved = resolveDirectDebridStreamIfNeeded(stream, currentSeason, currentEpisode)
             debridResolveJob = null
             if (resolved != null && !resolved.getStreamUrl().isNullOrBlank()) {
-                switchToSourceStream(resolved)
+                switchToSourceStream(resolved, fromAutoFailover = fromAutoFailover)
             } else if (resolved != null) {
                 switchToTorrentSourceStream(resolved)
             } else {
@@ -956,7 +970,7 @@ internal fun PlayerRuntimeController.switchToSourceStream(
                 val resolved = resolveDirectDebridStreamIfNeeded(stream, currentSeason, currentEpisode)
                 if (resolved != null && !resolved.getStreamUrl().isNullOrBlank()) {
                     debridResolveJob = null
-                    switchToSourceStream(resolved)
+                    switchToSourceStream(resolved, fromAutoFailover = fromAutoFailover)
                 } else {
                     debridResolveJob = null
                     _uiState.update {
@@ -1540,6 +1554,8 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(
     forcedTargetVideo: Video? = null,
     isAutoPlay: Boolean = false
 ) {
+    // The autoplay failover covers the episode autoplay first chose. A new episode starts fresh.
+    autoFailoverActive = false
     if (openExternalStreamInBrowser(stream = stream, fromEpisodePanel = true)) {
         return
     }

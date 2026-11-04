@@ -93,6 +93,45 @@ object StreamAutoPlaySelector {
         return selectBingeGroupMatch(visible, targetBingeGroup)
     }
 
+    /**
+     * Identifiers a stream can be recognised by in its different forms (the listed stream and the
+     * debrid-resolved copy that actually played). Used to remember which streams already failed.
+     */
+    fun failureKeys(stream: Stream): Set<String> = buildSet {
+        stream.getStreamUrl()?.takeIf { it.isNotBlank() }?.let { add("url:$it") }
+        stream.getEffectiveInfoHash()?.let { add("hash:${it.lowercase()}") }
+    }
+
+    /**
+     * Picks the next stream autoplay would play after the ones in [failedKeys] turned out to be
+     * dead. Same eligibility, source filters and ordering as [selectAutoPlayStream].
+     */
+    fun selectNextAutoPlayStream(
+        streams: List<Stream>,
+        failedKeys: Set<String>,
+        mode: StreamAutoPlayMode,
+        regexPattern: String,
+        source: StreamAutoPlaySource,
+        installedAddonNames: Set<String>,
+        selectedAddons: Set<String>,
+        selectedPlugins: Set<String>
+    ): Stream? {
+        val remaining = if (failedKeys.isEmpty()) {
+            streams
+        } else {
+            streams.filterNot { stream -> failureKeys(stream).any { it in failedKeys } }
+        }
+        return selectAutoPlayStream(
+            streams = remaining,
+            mode = mode,
+            regexPattern = regexPattern,
+            source = source,
+            installedAddonNames = installedAddonNames,
+            selectedAddons = selectedAddons,
+            selectedPlugins = selectedPlugins
+        )
+    }
+
     fun selectAutoPlayStream(
         streams: List<Stream>,
         mode: StreamAutoPlayMode,

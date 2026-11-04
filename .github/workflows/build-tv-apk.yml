@@ -1,0 +1,105 @@
+name: Build Android TV APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create/update GitHub Release with the APKs'
+        required: false
+        type: boolean
+        default: true
+  push:
+    branches:
+      - dev
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-tv-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build Android TV Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure local.properties
+        run: |
+          cat << 'EOF' > local.properties
+          NUVIO_SUPABASE_URL=${{ secrets.NUVIO_SUPABASE_URL || 'https://api.nuvio.tv' }}
+          NUVIO_SUPABASE_ANON_KEY=${{ secrets.NUVIO_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI' }}
+          TRAKT_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
+          SIMKL_APP_NAME=nuvio
+          SUPPORTERS_API_BASE_URL=https://nuvio.tv/
+          SUPPORT_URL=https://nuvio.tv/support
+          PLAYBACK_REPORTS_BASE_URL=https://nuvio.tv/
+          DOVI_NATIVE_ENABLED=true
+          DOVI_EXTRACTOR_HOOK_READY=true
+          DOVI_ENABLE_REAL_LINK=true
+          DOVI_LIBDOVI_PREBUILT_ROOT=DV7/libdovi
+          EOF
+
+      - name: Prepare Signing Keystore
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore "$RUNNER_TEMP/ci-release.jks" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+
+          cp "$RUNNER_TEMP/ci-release.jks" app/ci-signing.jks
+
+          {
+            echo "CI_USE_DEBUG_SIGNING=true"
+            echo "NUVIO_RELEASE_STORE_FILE=ci-signing.jks"
+            echo "NUVIO_RELEASE_KEY_ALIAS=androiddebugkey"
+            echo "NUVIO_RELEASE_KEY_PASSWORD=android"
+            echo "NUVIO_RELEASE_STORE_PASSWORD=android"
+          } >> "$GITHUB_ENV"
+
+      - name: Build Full Release APKs
+        run: |
+          ./gradlew :app:assembleFullRelease --no-daemon --stacktrace
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: NuvioTV-Release-APKs
+          path: app/build/outputs/apk/full/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: ${{ inputs.create_release != false || startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name == 'dev' && 'v1.1.0-autoplay-failover' || github.ref_name }}
+          name: Nuvio TV v1.1.0-beta.10 (Autoplay Failover)
+          files: app/build/outputs/apk/full/release/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
