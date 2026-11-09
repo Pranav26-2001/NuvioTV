@@ -1713,11 +1713,10 @@ internal fun PlayerRuntimeController.initializePlayer(
                                 )
                             }
                         }
-                        // Autoplay picked a dead stream: move on to the next candidate. Decoder
-                        // problems are device-specific, so those keep the "switch to mpv" prompt.
-                        if (!canSwitchToMpvOnFatal &&
-                            tryAutoSwitchToNextStream(onNoCandidate = { publishFatalError() })
-                        ) {
+                        // Autoplay picked a stream that can't be played (including container/decoder
+                        // errors that would otherwise only offer the "switch to mpv" pill): move on
+                        // to the next candidate. If every candidate fails, the error and pill show.
+                        if (tryAutoSwitchToNextStream(onNoCandidate = { publishFatalError() })) {
                             return
                         }
                         publishFatalError()

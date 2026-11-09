@@ -198,7 +198,10 @@ internal fun PlayerRuntimeController.handleMpvPlaybackError(
 ) {
     if (!isUsingMpvEngine()) return
     if (isReleasingPlayer) return
-    if (startupEngineFailoverTriggered) return
+    // After an automatic Exo -> mpv engine switch this flag stays set and mpv errors used to be
+    // ignored, leaving the screen on "Starting stream...". While autoplay failover is active an mpv
+    // error on the switched engine is final for this stream, so let it through to the failover.
+    if (startupEngineFailoverTriggered && !autoFailoverActive) return
     if (mpvErrorRecoveryArmed) return
     if (_uiState.value.error != null) return
     if (!mpvErrorHandlingInProgress.compareAndSet(false, true)) return
@@ -336,7 +339,7 @@ internal fun PlayerRuntimeController.maybeRunMpvStartupWatchdog(view: NuvioMpvSu
 
     val enabled = _uiState.value.error == null &&
         !isReleasingPlayer &&
-        !startupEngineFailoverTriggered &&
+        (!startupEngineFailoverTriggered || autoFailoverActive) &&
         !mpvErrorRecoveryArmed &&
         currentStreamUrl.isNotBlank() &&
         !isInBackground &&
